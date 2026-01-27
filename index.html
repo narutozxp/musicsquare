@@ -1833,25 +1833,25 @@
           const uid = `qq-${it.id}`;
           if (state.trackMap.has(uid)) return;
 
-          const indexInList = idx + 1;  // 1-based，用来作为 n
+          const indexInList = idx + 1;  // 1-based，对应接口里的 n
 
           const track = {
             uid,
             source: 'qq',
 
-            // 用于交叉插入的序号
+            // 用于交错显示的排序
             displayIndex: indexInList,
 
-            // 记录检索关键词（后面详情请求要用同样的 msg）
+            // 记录检索关键词（详情再请求要用同一个 msg）
             keyword: kw,
             qqSearchKey: kw,
 
-            // 记录在搜索列表中的第几首，对应接口里的 n
+            // 这首在 QQ 搜索结果里的序号，用作 n
             qqIndex: indexInList,
 
             // 一些元信息
             qqId: it.id,
-            songid: it.id, // 保留旧字段名，避免其它地方用到
+            songid: it.id, // 保留旧字段名以防别处用到
 
             title: it.title || '',
             artist: it.author || '',
@@ -2048,16 +2048,16 @@
       track.detailsLoaded=true;
     }
 
-    // QQ 详情：根据「搜索时的关键词 + 搜索结果中的序号 qqIndex」来拿 url + lrc
+    // QQ 详情：根据搜索时的关键词 + 搜索结果序号 qqIndex 拿 url + lrc
     async function fetchQQDetails(track){
       const QQ_API_KEY = 'sk-62cdb03e2270eb3968cca7881399f412';
 
-      // 优先用搜索时的关键词（保证排序一致），兜底用 标题+歌手
+      // 优先用搜索时用过的关键词，保证和原始排序一致
       const msg =
         (track.qqSearchKey || track.keyword || '').trim() ||
         ((track.title || '') + ' ' + (track.artist || '')).trim();
 
-      // 第几首：来自 searchQQ 里写入的 qqIndex，兜底 displayIndex，再兜底 1
+      // n = 第几首：优先 qqIndex，其次 displayIndex，最后兜底 1
       const n =
         track.qqIndex ||
         track.displayIndex ||
@@ -2091,7 +2091,7 @@
 
         track.qqQualityText = d.quality || track.qqQualityText;
 
-        // 根据 quality 字段粗略推断
+        // 根据 quality 粗略判断一遍
         if (d.quality) {
           if (/hires|无损|flac|ape|wav/i.test(d.quality)) {
             track.quality = 'lossless';
@@ -2102,7 +2102,7 @@
           }
         }
 
-        // 再用 url 后缀兜底判断音质（你脚本里已有 inferQualityFromUrl）
+        // 再用 url 后缀兜底判断音质（你已有 inferQualityFromUrl）
         if (track.audioUrl) {
           const q = inferQualityFromUrl(track.audioUrl);
           if (q && q.label) {
@@ -2115,7 +2115,7 @@
 
       } catch (e) {
         console.error('qq detail (xianyuw)', e);
-        // 失败时不要把 detailsLoaded 置 true，这样下次还有机会重试
+        // 失败的话不要把 detailsLoaded 置 true，下次还有机会重试
       }
     }
 
@@ -2382,9 +2382,37 @@
     }
 
     function handleDownloadCurrent(){
-      const tr=state.currentTrack;
-      if(!tr||!tr.audioUrl){showToast(t('toastDownloadNotReady'));return;}
-      window.open(tr.audioUrl,'_blank');
+      const tr = state.currentTrack;
+      if (!tr || !tr.audioUrl) {
+        showToast(t('toastDownloadNotReady'));
+        return;
+      }
+
+      try {
+        // 用 a[download] 方式触发下载，比 window.open 更稳定
+        const a = document.createElement('a');
+        a.href = tr.audioUrl;
+
+        // 简单处理一下文件名（去掉非法字符）
+        const safeTitle = (tr.title || 'song')
+          .replace(/[\\/:*?"<>|]+/g, '_')
+          .slice(0, 50);
+
+        const base = tr.audioUrl.split('?')[0];
+        const extMatch = base.match(/\.([a-z0-9]+)$/i);
+        const ext = extMatch ? ('.' + extMatch[1]) : '';
+
+        a.download = safeTitle + ext;
+        a.style.display = 'none';
+
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {
+        console.error('download error', e);
+        // 兜底：如果 download 方式出错，再退回到原来的 window.open
+        window.open(tr.audioUrl, '_blank');
+      }
     }
 
     function addCurrentToPlaylist(){
